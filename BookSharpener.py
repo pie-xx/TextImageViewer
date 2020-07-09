@@ -2,10 +2,17 @@ import cv2
 from matplotlib import pyplot as plt
 import numpy as np
 
+Testimagefile = 'testimage.jpg'
+Blocksize = 64
+
 def getUmed(img):
     med = np.median(img) 
     fild = img[img < med]
     umed = np.median(fild) 
+    fild2 = fild[fild < umed]
+    umed = np.median(fild2) 
+    #fild3 = fild2[fild2 < umed]
+    #umed = np.median(fild3) 
     return( umed )
 
 def sharpener( img_gray, slim, pname ):
@@ -20,27 +27,41 @@ def sharpener( img_gray, slim, pname ):
 
     cv2.imwrite(pname+'{:03d}.jpg'.format(slim), dst )
 
-bookimg = cv2.imread('20150429134907676.jpg')
+bookimg = cv2.imread( Testimagefile )
 img_gray = cv2.cvtColor(bookimg, cv2.COLOR_BGR2GRAY)
 
-ha = int(img_gray.shape[0])
-hh = int(img_gray.shape[0]/2)
-orgupimg = img_gray[0:hh, 0:img_gray.shape[1]]
-orgdwnimg = img_gray[hh:ha, 0:img_gray.shape[1]]
-histup = cv2.calcHist([orgupimg],[0],None,[256],[0,256])
-histdwn = cv2.calcHist([orgdwnimg],[0],None,[256],[0,256])
-print( np.median(orgupimg), np.median(orgdwnimg) )
-plt.plot(histup)
-plt.show()
+imgHeight = int(img_gray.shape[0])
+imgHeight = int(img_gray.shape[0])
+imgWidth = int(img_gray.shape[1])
 
-plt.plot(histdwn)
-plt.show()
+for y in range( 0, imgHeight, Blocksize ):
+    for x in range( 0, imgWidth, Blocksize ):
+        pimg = img_gray[y:y+Blocksize, x:x+Blocksize]
+        std = np.std( pimg )
+        minv = np.min( pimg )
+        maxv = np.max( pimg )
+        pimg -= minv
 
-print ( getUmed( orgupimg ), getUmed( orgdwnimg ) )
+        slim = getUmed( pimg )
+        print( y, x, slim, std, minv, maxv )
+        if std < 6.0:
+            for sy in range (pimg.shape[0]):
+                for sx in range( pimg.shape[1] ):
+                    img_gray[y+sy][x+sx] = 255
+        else:
+            for sy in range (pimg.shape[0]):
+                for sx in range( pimg.shape[1] ):
+                    if maxv != minv:
+                        img_gray[y+sy][x+sx] = int((img_gray[y+sy][x+sx] *255.0)/(maxv - minv))
+                    if pimg[sy][sx] > slim:
+                        v = img_gray[y+sy][x+sx]
+                        v = v *2
+                        if v > 256:
+                            v = 255
+                        img_gray[y+sy][x+sx] = v
+                    else:
+                        img_gray[y+sy][x+sx] = pimg[sy][sx] / 2
+              
+cv2.imwrite('testimage_f.jpg', img_gray )
+cv2.imshow('testimage_f1', img_gray )
 
-"""
-for slim in range( 70, 200, 10 ):
-    #sharpener(img_gray, slim, "all")
-    #sharpener(orgupimg, slim, "orgupimg")
-    sharpener(orgdwnimg, slim, "orgdwnimgBS")
-"""
