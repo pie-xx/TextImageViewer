@@ -2,14 +2,12 @@ import cv2
 from matplotlib import pyplot as plt
 import numpy as np
 
-Testimagefile = 'city.jpg'
+Testimagefile = 'paralove.jpg'
 TestimageTitle = Testimagefile.split('.')[0]
-Blocksize = 32
-Slim = 5.0
-Wbias = 1.5
-Bbias = 0.3
+Blocksize = 64
+Bbias = 0.2
 
-def stdmap(img):
+def getStdThrsh(img):
     stds = []
     for y in range( 0, img.shape[0], Blocksize ):
         for x in range( 0, img.shape[0], Blocksize ):
@@ -23,21 +21,33 @@ def stdmap(img):
     print(np.argmax(hist[0]))
     print( hist[1] )
     peaki = np.argmax(hist[0])
+    
     if peaki == 0:
         peaki = 1
-    for n in range(peaki,len(hist[0])):
-        if hist[0][n-1] < hist[0][n]:
-            Slim = hist[1][n+1]
+    slim = 5.0
+    for n in range(peaki,len(hist[0])-1):
+        if hist[0][n] < hist[0][n+1]:
+            slim = hist[1][n+1]
+            print('slim n=', n+1)
             break
-    print(Slim)
-    plt.hist(stds, 100, [0, 100])
-    plt.show()
+    
+    #Slim=hist[1][peaki]
+    print("slim=",slim)
+    return slim
 
-def getUmed(img):
-    med = np.median(img) 
+def getBWThrsh(img):
+    med = np.median(img)
     fild = img[img < med]
-    umed = np.median(fild) 
-    return( umed )
+    return np.median(fild)
+
+def getWbias( img, bwthr ):
+    wimg = img[ img > bwthr ]
+    hist = np.histogram( wimg, bins=16 )
+    agm = np.argmax(hist[0])
+    return hist[1][agm]
+
+def getOutputName( title, slim ):
+    return title + "_s{:04.2f}b{:02d}.jpg".format( slim, Blocksize )
 
 bookimg = cv2.imread( Testimagefile )
 img_gray = cv2.cvtColor(bookimg, cv2.COLOR_BGR2GRAY)
@@ -45,44 +55,49 @@ img_gray = cv2.cvtColor(bookimg, cv2.COLOR_BGR2GRAY)
 imgHeight = int(img_gray.shape[0])
 imgWidth = int(img_gray.shape[1])
 
-stdmap(img_gray)
-
-
+slim = getStdThrsh(img_gray)
+if slim > 6.0:
+    slim = 6.0
+print( "output", getOutputName(TestimageTitle, slim) )
 for y in range( 0, imgHeight, Blocksize ):
-    print( y )
+    s = ""
     for x in range( 0, imgWidth, Blocksize ):
         pimg = img_gray[y:y+Blocksize, x:x+Blocksize]
         std = np.std( pimg )
         minv = np.min( pimg )
         maxv = np.max( pimg )
-        avr = np.average(pimg)
-        #pimg = cv2.equalizeHist(pimg)
         pimg -= minv
 
-        wlim = getUmed( pimg )
+        cimg = pimg.copy()
+        if maxv != minv:
+            for sy in range (cimg.shape[0]):
+                for sx in range( cimg.shape[1] ):
+                    cimg[sy][sx] = (cimg[sy][sx]*255.0)/(maxv - minv)
 
-        """
-        for sy in range (pimg.shape[0]):
-            for sx in range( pimg.shape[1] ):
-                img_gray[y+sy][x+sx] = std*4
-        """
-        if std < Slim:
+        bwthrsh = getBWThrsh( pimg )
+        wb = getWbias( cimg, bwthrsh )
+        wbias = 256 / wb
+        
+        if std < slim:
+            s = s + "B"
             for sy in range (pimg.shape[0]):
                 for sx in range( pimg.shape[1] ):
                     img_gray[y+sy][x+sx] = 255
         else:
-            for sy in range (pimg.shape[0]):
-                for sx in range( pimg.shape[1] ):
+            s = s + "_"
+            for sy in range (cimg.shape[0]):
+                for sx in range( cimg.shape[1] ):
                     if maxv != minv:
                         img_gray[y+sy][x+sx] = (img_gray[y+sy][x+sx]*255.0)/(maxv - minv)
-                    if pimg[sy][sx] > wlim:
+                    if pimg[sy][sx] > bwthrsh:
                         v = img_gray[y+sy][x+sx]
-                        v = v * Wbias
+                        v = v * wbias
                         if v > 255:
                             v = 255
                         img_gray[y+sy][x+sx] = v
                     else:
                         img_gray[y+sy][x+sx] = pimg[sy][sx] * Bbias
+    print( y, s )
 
-cv2.imwrite(TestimageTitle+'_mf152.jpg', img_gray )
+cv2.imwrite(getOutputName(TestimageTitle, slim), img_gray )
 
