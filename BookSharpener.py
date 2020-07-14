@@ -32,6 +32,8 @@ def getStdThrsh(img, Blocksize):
 def getBWThrsh(img):
     med = np.median(img)
     fild = img[img < med]
+    med = np.median(fild)
+    fild = fild[fild < med]
     return np.median(fild)
 
 def getWbias( img, bwthr ):
@@ -51,9 +53,9 @@ def sharpenImg(imgfile):
 
     bookimg = cv2.imread( Testimagefile )
     img_gray = cv2.cvtColor(bookimg, cv2.COLOR_BGR2GRAY)
+    outimage = img_gray.copy()
 
     slim = getStdThrsh(img_gray, Blocksize)
-
     for y in range( 0, img_gray.shape[0], Blocksize ):
         s = ""
         for x in range( 0, img_gray.shape[1], Blocksize ):
@@ -77,24 +79,22 @@ def sharpenImg(imgfile):
                 s = s + "B"
                 for sy in range (pimg.shape[0]):
                     for sx in range( pimg.shape[1] ):
-                        img_gray[y+sy][x+sx] = 255
+                        outimage[y+sy][x+sx] = 255
             else:
                 s = s + "_"
                 for sy in range (cimg.shape[0]):
                     for sx in range( cimg.shape[1] ):
-                        if maxv != minv:
-                            img_gray[y+sy][x+sx] = (img_gray[y+sy][x+sx]*255.0)/(maxv - minv)
-                        if pimg[sy][sx] > bwthrsh:
-                            v = img_gray[y+sy][x+sx]
+                        if cimg[sy][sx] > bwthrsh:
+                            v = cimg[sy][sx]
                             v = v * wbias
                             if v > 255:
                                 v = 255
-                            img_gray[y+sy][x+sx] = v
+                            outimage[y+sy][x+sx] = v
                         else:
-                            img_gray[y+sy][x+sx] = pimg[sy][sx] * Bbias
+                            outimage[y+sy][x+sx] = cimg[sy][sx] * Bbias
         print( "{:4d} {:s}".format( y, s ) )
 
-    cv2.imwrite(getOutputName(TestimageTitle, slim), img_gray )
+    cv2.imwrite("c"+getOutputName(TestimageTitle, slim), outimage )
 
 if __name__ =='__main__':
     sharpenImg('tarama36p.jpg')
