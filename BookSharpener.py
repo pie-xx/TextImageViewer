@@ -32,8 +32,6 @@ def getStdThrsh(img, Blocksize):
 def getBWThrsh(img):
     med = np.median(img)
     fild = img[img < med]
-    med = np.median(fild)
-    fild = fild[fild < med]
     return np.median(fild)
 
 def getWbias( img, bwthr ):
@@ -73,7 +71,10 @@ def sharpenImg(imgfile):
 
             bwthrsh = getBWThrsh( pimg )
             wb = getWbias( cimg, bwthrsh )
-            wbias = 256 / wb
+            if wb == 0:
+                wbias = 1.5
+            else:
+                wbias = 256 / wb
             
             if std < slim:
                 s = s + "B"
@@ -94,7 +95,7 @@ def sharpenImg(imgfile):
                             outimage[y+sy][x+sx] = cimg[sy][sx] * Bbias
         print( "{:4d} {:s}".format( y, s ) )
 
-    cv2.imwrite("c"+getOutputName(TestimageTitle, slim), outimage )
+    cv2.imwrite(getOutputName(TestimageTitle, slim), outimage )
 
 if __name__ =='__main__':
     sharpenImg('tarama36p.jpg')
