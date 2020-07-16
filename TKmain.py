@@ -5,14 +5,10 @@ from tkinter import ttk
 import BookSharpener
 
 def button1_clicked():
-    file = filedialog.askopenfile(initialdir='.')
+    file = filedialog.askopenfilename(initialdir='.')
     if file:
-        file.close()
-        v1.set(file.name)
-        BookSharpener.sharpenImg(file.name)
-
-
-
+        v1.set(file)
+        BookSharpener.sharpenImg(file)
 
 root = Tk()
 root.columnconfigure(0, weight=1)
