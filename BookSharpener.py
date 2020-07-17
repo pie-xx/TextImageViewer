@@ -5,7 +5,7 @@ import numpy as np
 def getStdThrsh(img, Blocksize):
     stds = []
     for y in range( 0, img.shape[0], Blocksize ):
-        for x in range( 0, img.shape[0], Blocksize ):
+        for x in range( 0, img.shape[1], Blocksize ):
             pimg = img[y:y+Blocksize, x:x+Blocksize]
             std = np.std( pimg )
             minv = np.min( pimg )
@@ -86,8 +86,7 @@ def sharpenImg(imgfile):
                 for sy in range (cimg.shape[0]):
                     for sx in range( cimg.shape[1] ):
                         if cimg[sy][sx] > bwthrsh:
-                            v = cimg[sy][sx]
-                            v = v * wbias
+                            v = cimg[sy][sx] * wbias
                             if v > 255:
                                 v = 255
                             outimage[y+sy][x+sx] = v
