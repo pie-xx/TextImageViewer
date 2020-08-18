@@ -51,7 +51,12 @@ def sharpenImg(imgfile):
 
     bookimg = cv2.imread( Testimagefile )
     img_gray = cv2.cvtColor(bookimg, cv2.COLOR_BGR2GRAY)
+#    for y in range( 0, img_gray.shape[0] ):
+#        for x in range( 0, img_gray.shape[1] ):
+#            img_gray[y][x] = 256 - img_gray[y][x]    
     outimage = img_gray.copy()
+
+    print( "width", img_gray.shape[1], "height", img_gray.shape[0] )
 
     slim = getStdThrsh(img_gray, Blocksize)
     for y in range( 0, img_gray.shape[0], Blocksize ):
@@ -94,7 +99,9 @@ def sharpenImg(imgfile):
                             outimage[y+sy][x+sx] = cimg[sy][sx] * Bbias
         print( "{:4d} {:s}".format( y, s ) )
 
-    cv2.imwrite(getOutputName(TestimageTitle, slim), outimage )
+    rtn = getOutputName(TestimageTitle, slim)
+    cv2.imwrite(rtn, outimage )
+    return rtn
 
 if __name__ =='__main__':
     sharpenImg('tarama36p.jpg')
