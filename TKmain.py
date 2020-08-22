@@ -14,17 +14,26 @@ def getFitsize( w, h, sw, sh ):
         vh = sh * (h/w)
     return int(vw), int(vh)
 
+convfile=""
+
 def button1_clicked():
+    global convfile
     file = filedialog.askopenfilename(initialdir='.')
     if file:
         img = Image.open(file)
         setImage( img )
         v1.set(file)
-        imgname = BookSharpener.sharpenImg(file)
-        v1.set(imgname)
-        img = Image.open(imgname)
-        setImage( img )
+        convfile = file
+        print("button1_clicked", convfile)
+        root.after( 500, func=convImage )
 
+def convImage():
+    global convfile
+    print("convImage", convfile)
+    imgname = BookSharpener.sharpenImg(convfile)
+    v1.set(imgname)
+    img = Image.open(imgname)
+    setImage( img )
 
 def setImage( img ):
     vw, vh = getFitsize(img.width, img.height, 800, 800)

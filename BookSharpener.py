@@ -44,26 +44,50 @@ def getOutputName( title, slim ):
     return title + "_s{:04.2f}.jpg".format( slim )
 
 def sharpenImg(imgfile):
+    Blocksize = 64
     Testimagefile = imgfile
     TestimageTitle = Testimagefile.split('.')[0]
-    Blocksize = 64
-    Bbias = 0.2
 
     bookimg = cv2.imread( Testimagefile )
     img_gray = cv2.cvtColor(bookimg, cv2.COLOR_BGR2GRAY)
 #    for y in range( 0, img_gray.shape[0] ):
 #        for x in range( 0, img_gray.shape[1] ):
 #            img_gray[y][x] = 256 - img_gray[y][x]    
-    outimage = img_gray.copy()
 
     print( "width", img_gray.shape[1], "height", img_gray.shape[0] )
 
     slim = getStdThrsh(img_gray, Blocksize)
-    for y in range( 0, img_gray.shape[0], Blocksize ):
+    outimage32 = sharpenMem( img_gray, slim, Blocksize, 32 )
+    cv2.imwrite("outimage32g.png", outimage32)
+    
+    img_gray = cv2.cvtColor(bookimg, cv2.COLOR_BGR2GRAY)
+    outimage00 = sharpenMem( img_gray, slim, Blocksize, 0 )
+    cv2.imwrite("outimage00g.png", outimage00)
+
+    for y in range( 0, img_gray.shape[0] ):
+        for x in range( 0, img_gray.shape[1] ):
+            if outimage00[y][x] > outimage32[y][x]:
+                outimage00[y][x] = outimage32[y][x]
+    
+    #outimage = cv2.addWeighted(outimage00, 0.5, outimage32, 0.5, 0)
+
+    rtn = getOutputName(TestimageTitle, slim)
+    cv2.imwrite(rtn, outimage00 )
+    return rtn
+
+def sharpenMem(img_gray, slim, Blocksize, bias):
+    Bbias = 0.2
+    outimage = img_gray.copy()
+    cannyimg = cv2.Canny(img_gray,64,128) 
+
+    for y in range( bias, img_gray.shape[0], Blocksize ):
         s = ""
-        for x in range( 0, img_gray.shape[1], Blocksize ):
+        for x in range( bias, img_gray.shape[1], Blocksize ):
+            himg = cannyimg[y:y+Blocksize, x:x+Blocksize]
+            avr = np.mean( himg )
+
             pimg = img_gray[y:y+Blocksize, x:x+Blocksize]
-            std = np.std( pimg )
+            #std = np.std( pimg )
             minv = np.min( pimg )
             maxv = np.max( pimg )
             pimg -= minv
@@ -81,7 +105,8 @@ def sharpenImg(imgfile):
             else:
                 wbias = 256 / wb
             
-            if std < slim:
+            #if std < slim:
+            if avr < 0.1:
                 s = s + "B"
                 for sy in range (pimg.shape[0]):
                     for sx in range( pimg.shape[1] ):
@@ -99,9 +124,8 @@ def sharpenImg(imgfile):
                             outimage[y+sy][x+sx] = cimg[sy][sx] * Bbias
         print( "{:4d} {:s}".format( y, s ) )
 
-    rtn = getOutputName(TestimageTitle, slim)
-    cv2.imwrite(rtn, outimage )
-    return rtn
+    return outimage
+
 
 if __name__ =='__main__':
     sharpenImg('tarama36p.jpg')
