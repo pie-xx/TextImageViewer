@@ -75,7 +75,6 @@ class CAPapp():
         #    scan.append(np.std(limg))
         #plt.plot( range(self.img.shape[1]-avw), scan)
 
-        
         csy, cey = self.scanareaY(py)
         #scan=[]
         minx = 0
@@ -163,11 +162,31 @@ class CAPapp():
             
             sx, sy=self.pic2scr(minx,csy)
             ex, ey=self.pic2scr(maxx,cey)
-
             self.canvas.create_rectangle(sx, sy, ex, ey, outline='red' )
             self.canvas.create_rectangle(tx-4,ty-4,tx+4,ty+4,outline="red")
+        
+            spfrm = int(splen *1.5)
+            miny = py
+            headx = int(((maxx-minx)/4)+minx)
+            for y in range(py,0,-spfrm):
+                limg = self.img[y:y+spfrm,minx:headx]
+                limstd = np.std(limg)
+                miny = y
+                if limstd < thr:
+                    break
 
-        if ori=="V":
+            for y in range(py,self.img.shape[0],spfrm):
+                limg = self.img[y:y+spfrm,minx:headx]
+                limstd = np.std(limg)
+                maxy = y
+                if limstd < thr:
+                    break
+
+            sx, sy=self.pic2scr(minx,miny)
+            ex, ey=self.pic2scr(maxx,maxy+splen)
+            self.canvas.create_rectangle(sx, sy, ex, ey, outline='blue' )
+
+        if ori=="V": #縦書き
             csx, cex = self.scanareaX(px)
             miny, maxy = self.sliceScanY(px,py,csx,cex)
             print("miny,maxy:", miny, maxy)
@@ -177,21 +196,35 @@ class CAPapp():
             self.canvas.create_rectangle(sx, sy, ex, ey, outline='red' )
             self.canvas.create_rectangle(tx-4,ty-4,tx+4,ty+4,outline="red")
         
-        plt.show()
+            spfrm = int(splen *1.5)
+            minx = px
+            heady = int(((maxy-miny)/4)+miny)
+            for x in range(px,0,-spfrm):
+                limg = self.img[miny:heady,x:x+spfrm]
+                limstd = np.std(limg)
+                minx = x
+                if limstd < thr:
+                    break
+
+            for x in range(px,self.img.shape[1],spfrm):
+                limg = self.img[miny:heady,x:x+spfrm]
+                limstd = np.std(limg)
+                maxx = x
+                if limstd < thr:
+                    break
+
+            sx, sy=self.pic2scr(minx,miny)
+            ex, ey=self.pic2scr(maxx,maxy+splen)
+            self.canvas.create_rectangle(sx, sy, ex, ey, outline='blue' )
+                       
 
     def getFitsize(self, w, h, sw, sh ):
         if w < h:
             vh = sh
             vw = sw * (w/h)
-            self.xb = (Vwidth - vw )/2
-            self.yb = 0
         else:
             vw = sw
             vh = sh * (h/w)
-            self.xb = 0
-            self.yb = (Vheight - vh )/2
-        self.xr = w / vw
-        self.yr = h / vh
         return int(vw), int(vh)
             
     def setImg( self ):
@@ -240,6 +273,21 @@ class CAPapp():
             cey = self.img.shape[0]
         return csy, cey
 
+    def orientationCheck(self, csx, csy, cex, cey):
+        cimg = self.img[csy:cey, csx:cex]
+        strx = [0]*(cex-csx)
+        for n in range((cex-csx)):
+            strx[n]=np.std( cimg[n:n+1,0:(cex-csx)])
+        stry = [0]*((cey-csy))
+        for n in range((cey-csy)):
+            stry[n]=np.std( cimg[0:(cey-csy),n:n+1])
+        
+        stdx = np.std(strx)
+        stdy = np.std(stry)
+        if stdx > stdy:
+            return "H", strx
+        return  "V", stry
+
     def localscan(self, _cx, _cy):
         global thr, splen
         cx = int(_cx)
@@ -248,81 +296,45 @@ class CAPapp():
         csx, cex = self.scanareaX(cx)
         csy, cey = self.scanareaY(cy)
 
-        cimg = self.img[csy:cey, csx:cex]
-        strx = [0]*(cex-csx)
-        for n in range((cex-csx)):
-            strx[n]=np.std( cimg[n:n+1,0:(cex-csx)])
+        ori, scanar = self.orientationCheck(csx, csy, cex, cey)
 
-        #hisx = np.histogram(strx,bins=50)
-
-        stry = [0]*((cey-csy))
-        for n in range((cey-csy)):
-            stry[n]=np.std( cimg[0:(cey-csy),n:n+1])
-        print("stry mean",np.mean(stry))
-        #hisy = np.histogram(stry,bins=50)
-        
-        print("xstd=", np.std(strx), "ystd=", np.std(stry))
-        ori = ""
-        if( np.std(strx) > np.std(stry)):
-            mean = np.mean(strx)
-            lowlist = [i for i in strx if i < thr]
-            lmean = np.mean(lowlist)
-            thr = (mean+lmean)/2
-            spws=[]
-            cnt=0
-            for n in strx:
-                if( n < thr ):
-                    cnt = cnt + 1
-                else:
-                    if cnt != 0:
-                        spws.append(cnt)
-                        cnt = 0
-            if(cnt > 0):
-                spws.append(cnt)
-
-            #splen = np.max(spws)
-
-            print("stry mean lmean", mean,lmean)
-            print("spws ", spws)            
-            print("横書き")
-            ori="H"
-
-            self.showFFT(strx)
-
+        mean = np.mean(scanar)
+        lowlist = [i for i in scanar if i < mean]
+        if( len(lowlist)==0):
+            lmean=0
         else:
-
-            mean = np.mean(stry)
-            lowlist = [i for i in stry if i < thr]
-            highlist = [i for i in stry if i > thr]
             lmean = np.mean(lowlist)
-            hmean = np.mean(highlist)
-            thr = (mean+lmean)/2
-            spws=[]
-            cnt=0
-            stry2 = []
-            for n in stry:
-                if( n < thr ):
-                    stry2.append(0)
-                    cnt = cnt + 1
-                else:
-                    stry2.append(hmean)
-                    if cnt != 0:
-                        spws.append(cnt)
-                        cnt = 0
-            if(cnt > 0):
-                spws.append(cnt)
-            #splen = np.max(spws) 
+        thr = (mean+lmean)/2
+        spws=[]
+        chws=[]
+        cnt=0
+        bcnt=0
+        for n in scanar:
+            if( n < thr ):
+                # 白地
+                cnt = cnt + 1
+                if bcnt !=0 :
+                    chws.append(bcnt)
+                    bcnt=0
+            else:
+                # 文字
+                bcnt = bcnt + 1
+                if cnt != 0:
+                    spws.append(cnt)
+                    cnt = 0
 
+        if len(chws)!=0:
+            splen = np.max(chws)
+        else:
+            splen = 32
 
-            print("stry mean lmean", mean, lmean)
-            print("spws ", spws)                
+        print("scanar mean lmean", mean,lmean)
+        print("spws ", spws)            
+        print("chws ", chws)
+        print("splen ", splen )      
+        print("orientation ", ori)
 
-            print("縦書き")
-            ori="V"
-
-            self.showFFT(stry)
-
-
+        #self.showFFT(scanar)
 
         return ori
 
@@ -337,9 +349,9 @@ class CAPapp():
         freq = np.fft.fftfreq(N,1.0/256)
         Amp = np.abs(F/(N/2)) # 振幅
 
-        print( "F", F[:10])
-        print( "Amp", Amp[:10])
-        print( "freq", freq[:10])
+        #print( "F", F[:10])
+        #print( "Amp", Amp[:10])
+        #print( "freq", freq[:10])
 
         ax[1].plot(freq[1:int(N/2)], Amp[1:int(N/2)])
         ax[1].set_xlabel("Freqency [Hz]")
@@ -360,11 +372,14 @@ class CAPapp():
     def fileopen_clicked(self):
         filename = filedialog.askopenfilename(initialdir='.')
         if filename:
-            self.img = cv2.imread(filename)
-            self.oimg = cv2.imread(filename)
-            print( filename, self.img.shape[1], self.img.shape[0] )
-            self.setImg()
-            self.filename =  filename
+            with open( filename, 'rb') as f:
+                fdata =f.read()
+                inp = np.frombuffer(fdata, dtype = 'int8')
+                self.img = cv2.imdecode(inp, cv2.IMREAD_UNCHANGED)
+                self.oimg = cv2.imdecode(inp,cv2.IMREAD_UNCHANGED)
+                print( filename, self.img.shape[1], self.img.shape[0] )
+                self.setImg()
+                self.filename =  filename
 
     def stdscan(self):
         global smap
