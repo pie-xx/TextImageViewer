@@ -9,6 +9,9 @@ from tkinter import filedialog
 import numpy as np
 from PIL import Image, ImageTk
 from matplotlib import pyplot as plt
+import itertools
+
+from numpy.lib.function_base import append
 
 #import pyocr
 #import pyocr.builders
@@ -45,46 +48,21 @@ class CAPapp():
         self.fbar.rowconfigure(0,weight=1)
         self.fbar.grid(sticky=(tkinter.N,tkinter.W,tkinter.S,tkinter.E))
 
-        self.fileopenBtn = ttk.Button(
-                self.fbar, text="Open", width=6,
-                command=self.fileopen_clicked
-                )
-        self.fileopenBtn.grid(row=0,column=6)
-
-        self.nextBtn = ttk.Button(
-                self.fbar, text="→", width=8,
-                command=self.next_clicked
-                )
-        self.nextBtn.grid(row=0,column=5)
-
-        self.beforeBtn = ttk.Button(
-                self.fbar, text="←", width=8,
-                command=self.before_clicked
-                )
-        self.beforeBtn.grid(row=0,column=4)
-
-        self.backBtn = ttk.Button(
-                self.fbar, text="↶", width=6,
-                command=self.back_clicked
-                )
-        self.backBtn.grid(row=0,column=3)
-
-        self.enlargeBtn = ttk.Button(
-                self.fbar, text="+", width=8,
-                command=self.toenlarge
-                )
-        self.enlargeBtn.grid(row=0,column=2)
-
-        self.shrinkBtn = ttk.Button(
-                self.fbar, text="-", width=8,
-                command=self.toshrink
-                )
-        self.shrinkBtn.grid(row=0,column=1)
-
         self.barlabel = tkinter.StringVar()
         self.barlabel.set("filename")
         self.label = ttk.Label(self.fbar, textvariable=self.barlabel)
         self.label.grid(row=0,column=0)
+
+        self.btnColumn = 1
+
+        self.addBtn( "F●", self.filter2, 6)
+        self.addBtn( "F", self.filter, 6)
+        self.addBtn( "-", self.toshrink, 8)
+        self.addBtn( "+", self.toenlarge, 8)
+        self.addBtn( "↶", self.back_clicked, 6)
+        self.addBtn( "←", self.before_clicked, 8)
+        self.addBtn( "→", self.next_clicked, 8)
+        self.addBtn( "Open", self.fileopen_clicked, 8)
 
         # Canvas
         self.canvas=tkinter.Canvas(self.root, width=Vwidth, height=Vheight, bg='white')
@@ -101,15 +79,24 @@ class CAPapp():
 
         self.initialdir='.'
 
+    def addBtn(self, title, func, btn_width):
+        self.fileopenBtn = ttk.Button(
+                self.fbar, text=title, width=btn_width,
+                command=func
+                )
+        self.fileopenBtn.grid(row=0,column=self.btnColumn)
+        self.btnColumn = self.btnColumn + 1
+        pass
+
     def toenlarge(self):
         self.clipSx, self.clipSy, self.clipEx, self.clipEy = self.enlargement(self.clipSx, self.clipSy, self.clipEx, self.clipEy)
-        cimg = self.img[self.clipSy:self.clipEy,self.clipSx:self.clipEx]
-        self.setImg(cimg)
+        self.cimg = self.img[self.clipSy:self.clipEy,self.clipSx:self.clipEx]
+        self.setImg(self.cimg)
 
     def toshrink(self):
         self.clipSx, self.clipSy, self.clipEx, self.clipEy = self.shrink(self.clipSx, self.clipSy, self.clipEx, self.clipEy)
-        cimg = self.img[self.clipSy:self.clipEy,self.clipSx:self.clipEx]
-        self.setImg(cimg)
+        self.cimg = self.img[self.clipSy:self.clipEy,self.clipSx:self.clipEx]
+        self.setImg(self.cimg)
 
     def sliceScanX(self, px, py, csy, cey):
 
@@ -185,6 +172,8 @@ class CAPapp():
         pass
 
     def onMotion(self,event):
+        if( ax==0):
+            return
         if( self.scrSx < 0):
             self.scrSx = event.x
             self.scrSy = event.y
@@ -194,9 +183,9 @@ class CAPapp():
 
         self.clipSx, self.clipSy, self.clipEx, self.clipEy = self.correctClip(self.clipSx + movx, self.clipSy + movy, self.clipEx + movx,self.clipEy + movy)
 
-        cimg = self.img[self.clipSy:self.clipEy, self.clipSx:self.clipEx]
+        self.cimg = self.img[self.clipSy:self.clipEy, self.clipSx:self.clipEx]
 
-        self.setImg(cimg)
+        self.setImg(self.cimg)
 
         self.scrSx = event.x
         self.scrSy = event.y
@@ -307,8 +296,8 @@ class CAPapp():
             minx = int(maxx - Vw)
             
         self.clipSx, self.clipSy, self.clipEx, self.clipEy = self.shrink(minx, miny, maxx, maxy)
-        cimg = self.img[self.clipSy:self.clipEy,self.clipSx:self.clipEx]
-        self.setImg(cimg)
+        self.cimg = self.img[self.clipSy:self.clipEy,self.clipSx:self.clipEx]
+        self.setImg(self.cimg)
                        
     def shrink(self, minx, miny, maxx, maxy):
         dw = int((maxx - minx) * 0.02)
@@ -336,8 +325,6 @@ class CAPapp():
     
         try:
             vw, vh = self.getFitsize(img.shape[1], img.shape[0], Vwidth, Vheight)
-            self.vh = vh
-            self.vw = vw
 
             rimg = cv2.resize(img , (vw, vh))
             rgbimg = cv2.cvtColor(rimg, cv2.COLOR_BGR2RGB)
@@ -347,18 +334,71 @@ class CAPapp():
 
             if img.shape[1] > img.shape[0]:
                 ax = Vwidth / img.shape[1]
-                ay = self.vh / img.shape[0]
-                ybias = (Vheight - self.vh )/2
+                ay = vh / img.shape[0]
+                ybias = (Vheight - vh )/2
                 xbias=0
             else:
-                ax = self.vw / img.shape[1]
+                ax = vw / img.shape[1]
                 ay = Vheight / img.shape[0]
-                xbias = (Vwidth - self.vw )/2
+                xbias = (Vwidth - vw )/2
                 ybias = 0
 
         except:
             self.canvas.create_text(75, 75, text = self.filename)
-            pass        
+
+    def filter2(self):
+        filimg = cv2.cvtColor(self.cimg, cv2.COLOR_RGB2GRAY)
+        filimg = cv2.convertScaleAbs(filimg,alpha = 3,beta = -50 )
+        self.setImg(filimg)
+
+    def filter(self):
+        """
+        histup = cv2.calcHist([self.cimg],[0],None,[256],[0,256]) 
+        maxv = -1
+        vinx = -1
+        inx = 0
+        for v in histup:
+            if v > maxv:
+                maxv = v
+                vinx = inx
+            inx = inx + 1
+        print( vinx, maxv )
+        plt.plot(histup)
+        """
+        filimg = cv2.cvtColor(self.cimg, cv2.COLOR_RGB2GRAY)
+        filimg = cv2.convertScaleAbs(filimg,alpha = 3,beta = -200 )
+        #print( 256/(256-vinx), vinx - 256  )
+        """
+        filimg = cv2.cvtColor(self.cimg, cv2.COLOR_RGB2GRAY)
+        histup = cv2.calcHist([filimg],[0],None,[256],[0,256]) 
+        plt.plot(histup)
+        plt.show()
+        
+        cv =[]
+        ci =[]
+        cimg = np.ravel( filimg)
+        for n in range(1,256):
+            print(n)
+            upper = [x for x in cimg if x > n]
+            lower = [x for x in cimg if x <= n]
+            if( len(upper)*len(lower)!=0 ):
+                us = np.std( upper )
+                ls = np.std(lower)
+                print(us,ls)
+                cv.append( us + ls )
+                ci.append( n )
+
+        plt.plot(ci,cv)
+        plt.show()
+        """
+        self.setImg(filimg)
+
+
+        #clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+        #filimg = cv2.equalizeHist(filimg)
+        #filimg = clahe.apply(filimg)
+        #rimg = cv2.cvtColor(bookimg, cv2.COLOR_BGR2GRAY)
+        #self.oimg = cv2.imdecode(inp,cv2.IMREAD_UNCHANGED)
 
     def scanareaX(self, cx):
         scanwidth = 128
@@ -466,7 +506,11 @@ class CAPapp():
                 fdata =f.read()
                 inp = np.frombuffer(fdata, dtype = 'int8')
                 self.img = cv2.imdecode(inp, cv2.IMREAD_UNCHANGED)
-                #self.oimg = cv2.imdecode(inp,cv2.IMREAD_UNCHANGED)
+                self.cimg = self.img
+                self.clipSx =0
+                self.clipSy =0
+                self.clipEx = self.img.shape[1]
+                self.clipEy = self.img.shape[0]
                 self.setImg(self.img)
         except:
             self.canvas.create_text(75, 75, text = self.filename)
