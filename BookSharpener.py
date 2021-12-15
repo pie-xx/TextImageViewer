@@ -1,3 +1,4 @@
+#from numba import jit
 import cv2
 from matplotlib import pyplot as plt
 import numpy as np
@@ -24,8 +25,8 @@ def getStdThrsh(img, Blocksize):
             slim = hist[1][n+1]
             break
 
-    if slim > 6.0:
-        slim = 6.0
+    #if slim > 6.0:
+    #    slim = 6.0
     
     return slim
 
@@ -48,11 +49,12 @@ def sharpenImg(imgfile):
     Testimagefile = imgfile
     TestimageTitle = Testimagefile.split('.')[0]
 
-    bookimg = cv2.imread( Testimagefile )
+    with open(Testimagefile, mode='rb') as f:
+        fdata =f.read()
+        inp = np.frombuffer(fdata, dtype = 'int8')
+        bookimg = cv2.imdecode(inp, cv2.IMREAD_UNCHANGED)
+    #bookimg = cv2.imread( Testimagefile )
     img_gray = cv2.cvtColor(bookimg, cv2.COLOR_BGR2GRAY)
-#    for y in range( 0, img_gray.shape[0] ):
-#        for x in range( 0, img_gray.shape[1] ):
-#            img_gray[y][x] = 256 - img_gray[y][x]    
 
     print( "width", img_gray.shape[1], "height", img_gray.shape[0] )
 
@@ -64,69 +66,79 @@ def sharpenImg(imgfile):
     outimage00 = sharpenMem( img_gray, slim, Blocksize, 0 )
     cv2.imwrite("outimage00g.png", outimage00)
 
-    for y in range( 0, img_gray.shape[0] ):
-        for x in range( 0, img_gray.shape[1] ):
-            if outimage00[y][x] > outimage32[y][x]:
-                outimage00[y][x] = outimage32[y][x]
-    
-    #outimage = cv2.addWeighted(outimage00, 0.5, outimage32, 0.5, 0)
+    #for y in range( Blocksize, img_gray.shape[0]-Blocksize*2 ):
+    #    for x in range( 0, img_gray.shape[1] ):
+    #        if outimage00[y][x] > outimage32[y][x]:
+    #            outimage00[y][x] = outimage32[y][x]
+    outimage = cv2.addWeighted(outimage00, 0.5, outimage32, 0.5, 0)
 
     rtn = getOutputName(TestimageTitle, slim)
-    cv2.imwrite(rtn, outimage00 )
+    with open(rtn,mode='wb') as f:
+        fv, bookimg = cv2.imencode(rtn,outimage)
+        f.write(bookimg)
+
+    #cv2.imwrite(rtn, outimage )
     return rtn
 
+def neardevi(imgbl):
+    d = 0.0
+    for y in range(imgbl.shape[0]):
+        for x in range(1, imgbl.shape[1] ):
+            d = d + (imgbl[y][x-1]-imgbl[y][x])*(imgbl[y][x-1]-imgbl[y][x])
+    d = d / (imgbl.shape[0]*imgbl.shape[1])
+    return d        
+
+#@jit
 def sharpenMem(img_gray, slim, Blocksize, bias):
     Bbias = 0.2
     outimage = img_gray.copy()
-    cannyimg = cv2.Canny(img_gray,64,128) 
+    bimgl = np.zeros([Blocksize,int(bias)]) + 255
+    bimgu = np.zeros([int(Blocksize/2),img_gray.shape[1]]) + 255
+    yimgs=[]
+    if bias!=0:
+        yimgs.append(bimgu)
 
-    for y in range( bias, img_gray.shape[0], Blocksize ):
+    for y in range( bias, img_gray.shape[0]-Blocksize, Blocksize ):
         s = ""
+
+        ximgs=[]
+        if bias!=0:
+            ximgs.append(bimgl)
         for x in range( bias, img_gray.shape[1], Blocksize ):
-            himg = cannyimg[y:y+Blocksize, x:x+Blocksize]
-            avr = np.mean( himg )
-
             pimg = img_gray[y:y+Blocksize, x:x+Blocksize]
-            #std = np.std( pimg )
-            minv = np.min( pimg )
-            maxv = np.max( pimg )
-            pimg -= minv
-
-            cimg = pimg.copy()
-            if maxv != minv:
-                for sy in range (cimg.shape[0]):
-                    for sx in range( cimg.shape[1] ):
-                        cimg[sy][sx] = (cimg[sy][sx]*255.0)/(maxv - minv)
-
-            bwthrsh = getBWThrsh( pimg )
-            wb = getWbias( cimg, bwthrsh )
-            if wb == 0:
-                wbias = 1.5
-            else:
-                wbias = 256 / wb
-            
-            #if std < slim:
-            if avr < 0.1:
-                s = s + "B"
-                for sy in range (pimg.shape[0]):
-                    for sx in range( pimg.shape[1] ):
-                        outimage[y+sy][x+sx] = 255
-            else:
+            std = np.std( pimg )
+                 
+            if std < slim:
                 s = s + "_"
-                for sy in range (cimg.shape[0]):
-                    for sx in range( cimg.shape[1] ):
-                        if cimg[sy][sx] > bwthrsh:
-                            v = cimg[sy][sx] * wbias
-                            if v > 255:
-                                v = 255
-                            outimage[y+sy][x+sx] = v
-                        else:
-                            outimage[y+sy][x+sx] = cimg[sy][sx] * Bbias
+                ximg=np.zeros(pimg.shape) + 255
+            else:
+                s = s + "#"
+                lut = np.zeros(256)
+                white = int(np.median(pimg))
+                black = int(white / 2)
+                cnt = int(white - black)
+                for n in range(cnt):
+                    lut[black+n]=( int(256 * n / cnt) )
+                for n in range(white,256):
+                    lut[n]=(255)
+                ximg=cv2.LUT(pimg,lut)
+
+            ximgs.append(ximg)
+
+        #if bias!=0:
+        #    ximgs.append(bimgr)
+
+        ximgsall=cv2.hconcat( ximgs )
+        yimgs.append( ximgsall )
         print( "{:4d} {:s}".format( y, s ) )
+
+    if bias==0:
+        yimgs.append(bimgu)
+
+    outimage = cv2.vconcat(yimgs)
 
     return outimage
 
-
 if __name__ =='__main__':
-    sharpenImg('tarama36p.jpg')
+    sharpenImg('city.jpg')
 
