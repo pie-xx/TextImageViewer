@@ -42,7 +42,7 @@ def getWbias( img, bwthr ):
     return hist[1][agm]
 
 def getOutputName( title, slim ):
-    return title + "_s{:04.2f}.jpg".format( slim )
+    return title + "_t{:04.2f}.jpg".format( slim )
 
 def sharpenImg(imgfile):
     Blocksize = 64
@@ -53,23 +53,19 @@ def sharpenImg(imgfile):
         fdata =f.read()
         inp = np.frombuffer(fdata, dtype = 'int8')
         bookimg = cv2.imdecode(inp, cv2.IMREAD_UNCHANGED)
-    #bookimg = cv2.imread( Testimagefile )
+
     img_gray = cv2.cvtColor(bookimg, cv2.COLOR_BGR2GRAY)
 
     print( "width", img_gray.shape[1], "height", img_gray.shape[0] )
 
     slim = getStdThrsh(img_gray, Blocksize)
     outimage32 = sharpenMem( img_gray, slim, Blocksize, 32 )
-    cv2.imwrite("outimage32g.png", outimage32)
+    #cv2.imwrite("outimage32g.png", outimage32)
     
     img_gray = cv2.cvtColor(bookimg, cv2.COLOR_BGR2GRAY)
     outimage00 = sharpenMem( img_gray, slim, Blocksize, 0 )
-    cv2.imwrite("outimage00g.png", outimage00)
+    #cv2.imwrite("outimage00g.png", outimage00)
 
-    #for y in range( Blocksize, img_gray.shape[0]-Blocksize*2 ):
-    #    for x in range( 0, img_gray.shape[1] ):
-    #        if outimage00[y][x] > outimage32[y][x]:
-    #            outimage00[y][x] = outimage32[y][x]
     outimage = cv2.addWeighted(outimage00, 0.5, outimage32, 0.5, 0)
 
     rtn = getOutputName(TestimageTitle, slim)
@@ -77,7 +73,6 @@ def sharpenImg(imgfile):
         fv, bookimg = cv2.imencode(rtn,outimage)
         f.write(bookimg)
 
-    #cv2.imwrite(rtn, outimage )
     return rtn
 
 def neardevi(imgbl):
@@ -90,24 +85,30 @@ def neardevi(imgbl):
 
 #@jit
 def sharpenMem(img_gray, slim, Blocksize, bias):
-    Bbias = 0.2
-    outimage = img_gray.copy()
-    bimgl = np.zeros([Blocksize,int(bias)]) + 255
-    bimgu = np.zeros([int(Blocksize/2),img_gray.shape[1]]) + 255
-    yimgs=[]
-    if bias!=0:
-        yimgs.append(bimgu)
 
-    for y in range( bias, img_gray.shape[0]-Blocksize, Blocksize ):
+    bimgl = np.zeros([Blocksize,int(bias)]) + 255
+
+    h = int((img_gray.shape[0] - bias) / Blocksize )*Blocksize
+    d = img_gray.shape[0] - h -bias
+
+    bimgle = np.zeros([d,int(bias)]) + 255
+    bimgu = np.zeros([int(bias),img_gray.shape[1]]) + 255
+
+    yimgs=[]
+    yimgs.append(bimgu)
+
+    for y in range( bias, img_gray.shape[0], Blocksize ):
         s = ""
 
         ximgs=[]
-        if bias!=0:
+        if y+Blocksize > img_gray.shape[0]:
+            ximgs.append(bimgle)
+        else:
             ximgs.append(bimgl)
-        for x in range( bias, img_gray.shape[1], Blocksize ):
+
+        for x in range( bias, img_gray.shape[1]-Blocksize, Blocksize ):
             pimg = img_gray[y:y+Blocksize, x:x+Blocksize]
             std = np.std( pimg )
-                 
             if std < slim:
                 s = s + "_"
                 ximg=np.zeros(pimg.shape) + 255
@@ -115,7 +116,7 @@ def sharpenMem(img_gray, slim, Blocksize, bias):
                 s = s + "#"
                 lut = np.zeros(256)
                 white = int(np.median(pimg))
-                black = int(white / 2)
+                black = int(white * 2 / 3)
                 cnt = int(white - black)
                 for n in range(cnt):
                     lut[black+n]=( int(256 * n / cnt) )
@@ -125,20 +126,21 @@ def sharpenMem(img_gray, slim, Blocksize, bias):
 
             ximgs.append(ximg)
 
-        #if bias!=0:
-        #    ximgs.append(bimgr)
+        if img_gray.shape[1] > x+Blocksize:
+            bimgr = np.zeros([ximg.shape[0],int(img_gray.shape[1] - x-Blocksize)]) + 255
+            ximgs.append(bimgr)
 
-        ximgsall=cv2.hconcat( ximgs )
-        yimgs.append( ximgsall )
+        yimgs.append( cv2.hconcat( ximgs ) )
         print( "{:4d} {:s}".format( y, s ) )
 
-    if bias==0:
-        yimgs.append(bimgu)
+    if img_gray.shape[0] > y+Blocksize:
+        bimgd = np.zeros([int(img_gray.shape[0] - y - Blocksize),img_gray.shape[1]]) + 255
+        yimgs.append(bimgd)
 
     outimage = cv2.vconcat(yimgs)
 
     return outimage
 
 if __name__ =='__main__':
-    sharpenImg('city.jpg')
+    sharpenImg("city.jpg")
 
