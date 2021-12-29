@@ -2,23 +2,23 @@
 # 画像を選択表示する。表示画像をクリックすると近傍64dot四方のヒストグラムを表示
 #
 import os
+import json
+from posixpath import basename
+
 import cv2
 import tkinter
 from tkinter import ttk
 from tkinter import filedialog
+from tkinter import simpledialog
 import numpy as np
 from PIL import Image, ImageTk
-from matplotlib import pyplot as plt
-import itertools
 
-from numpy.lib.function_base import append
-
-#import pyocr
-#import pyocr.builders
-#from sklearn.cluster import KMeans
+import BookSharpener
 
 Vwidth = 1100
 Vheight = 1600
+AnnoSaveFile = ".annofilerx.json"
+CpageSaveFile = ".annofilers.json"
 
 reso=16
 ax=0
@@ -31,10 +31,132 @@ thr=10
 splen=32
 avw=4
 
+class AnnoFiler():
+    def __init__(self, filename):
+        self.initialdir = os.path.dirname(filename)
+        self.aprof = json.loads('{"annos":{"'+AnnoSaveFile+'":{"text":"annotation"}}}')
+        try:
+            with open(self.initialdir+'/'+AnnoSaveFile,'r',encoding='utf-8') as f:
+                self.aprof = json.load(f)
+                annos = self.aprof['annos']
+                for a in annos:
+                    print(a,annos[a])
+        except:
+            print('no annotation')
+        pass
+
+    def put(self, basename, anno):
+        try:
+            annos = self.aprof['annos']
+            panno = json.loads('{"text":"'+anno+'"}')
+            annos[basename] = panno
+            self.aprof['annos'] = annos
+            with open(self.initialdir+"/."+AnnoSaveFile,"w",encoding="utf-8") as f:
+                f.write(json.dumps(self.aprof))
+        except:
+            pass
+        pass
+
+    def get(self, basename):
+        try:
+            annos = self.aprof['annos']
+            panno = annos[basename]
+            return panno['text']
+        except:
+            pass
+        return ""
+
+class PageProp():
+    def __init__(self, filename):
+        
+        pass
+"""
+class ScrCanvas():
+    def __init__(self, bf, width, height, bg ):
+        self.canvas = tkinter.Canvas(bf, width=width, height=height, bg=bg)
+        self.canvas.bind('<Motion>', self.onMotion)
+
+        self.onScr=False
+        pass
+
+    def onPress(self, event):
+        print("onPress",event)
+        self.scrSx = -1
+        self.scrSy = -1
+        self.onScr = True
+        pass
+
+    def onRelease(self, event):
+        print("onRelease",event)
+        self.scrSx = -1
+        self.scrSy = -1
+        self.onScr = False
+        pass
+
+    def onMotion(self,event):
+        if self.onScr == False:
+            return
+        if( ax==0):
+            return
+        if( self.scrSx < 0):
+            self.scrSx = event.x
+            self.scrSy = event.y
+            return
+
+        movx, movy = self.scr2pic( self.scrSx - event.x , self.scrSy - event.y)
+        self.clipSx, self.clipSy, self.clipEx, self.clipEy = self.correctClip(self.clipSx + movx, self.clipSy + movy, self.clipEx + movx,self.clipEy + movy)
+        self.cimg = self.fimg[self.clipSy:self.clipEy, self.clipSx:self.clipEx]
+        self.setImg(self.cimg)
+        self.scrSx = event.x
+        self.scrSy = event.y
+        pass
+
+    def setImg( self, img ):
+        global ax,ay,xbias,ybias
+
+        self.canvas.delete("all")
+    
+        try:
+            vw, vh = self.getFitsize(img.shape[1], img.shape[0], Vwidth, Vheight)
+
+            rimg = cv2.resize(img , (vw, vh))
+            rgbimg = cv2.cvtColor(rimg, cv2.COLOR_BGR2RGB)
+            pil_image = Image.fromarray(rgbimg)
+            self.tkimg = ImageTk.PhotoImage(pil_image)
+            self.c1id=self.canvas.create_image(Vwidth/2, Vheight/2, image=self.tkimg)
+
+            if img.shape[1] > img.shape[0]:
+                ax = Vwidth / img.shape[1]
+                ay = vh / img.shape[0]
+                ybias = (Vheight - vh )/2
+                xbias=0
+            else:
+                ax = vw / img.shape[1]
+                ay = Vheight / img.shape[0]
+                xbias = (Vwidth - vw )/2
+                ybias = 0
+
+            if self.prgEx > -1:
+                sx, sy = self.fpos2spos(self.prgSx,self.prgSy)
+                ex, ey = self.fpos2spos(self.prgEx,self.prgEy)
+                self.canvas.create_rectangle(sx, sy, ex, ey, outline='blue' )
+
+        except:
+            self.canvas.create_text(75, 75, text = self.filename)
+ 
+
+    def canvas(self):
+        return self.canvas;
+"""
 class CAPapp():
     def __init__(self, **kwargs):
+        global Vheight, Vwidth
         # ルート窓
         self.root = tkinter.Tk()
+        print(self.root.winfo_screenwidth(), self.root.winfo_screenheight())
+        Vwidth = self.root.winfo_screenwidth()
+        Vheight = self.root.winfo_screenheight() - 160
+
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0,weight=1)
         # フレーム
@@ -53,9 +175,15 @@ class CAPapp():
         self.label = ttk.Label(self.fbar, textvariable=self.barlabel)
         self.label.grid(row=0,column=0)
 
+        self.anolabelvar = tkinter.StringVar()
+        self.anolabelvar.set("annotation")
+        self.anolabel = ttk.Label(self.fbar, textvariable=self.anolabelvar)
+        self.anolabel.grid(row=1,column=0)
+
         self.btnColumn = 1
 
-        self.addBtn( "F●", self.filter2, 6)
+        self.addBtn( "p", self.gopage, 6)
+        self.addBtn( "Ann", self.add_annotation, 6)
         self.addBtn( "F", self.filter, 6)
         self.addBtn( "-", self.toshrink, 8)
         self.addBtn( "+", self.toenlarge, 8)
@@ -74,10 +202,13 @@ class CAPapp():
         self.canvas.bind('<Motion>', self.onMotion)
 
         self.img = []
+        self.fimg = []
         self.scrSx = -1
         self.scrSy = -1
 
         self.initialdir='.'
+        self.aprof = {}
+        self.onScr = False
 
     def addBtn(self, title, func, btn_width):
         self.fileopenBtn = ttk.Button(
@@ -90,12 +221,12 @@ class CAPapp():
 
     def toenlarge(self):
         self.clipSx, self.clipSy, self.clipEx, self.clipEy = self.enlargement(self.clipSx, self.clipSy, self.clipEx, self.clipEy)
-        self.cimg = self.img[self.clipSy:self.clipEy,self.clipSx:self.clipEx]
+        self.cimg = self.fimg[self.clipSy:self.clipEy,self.clipSx:self.clipEx]
         self.setImg(self.cimg)
 
     def toshrink(self):
         self.clipSx, self.clipSy, self.clipEx, self.clipEy = self.shrink(self.clipSx, self.clipSy, self.clipEx, self.clipEy)
-        self.cimg = self.img[self.clipSy:self.clipEy,self.clipSx:self.clipEx]
+        self.cimg = self.fimg[self.clipSy:self.clipEy,self.clipSx:self.clipEx]
         self.setImg(self.cimg)
 
     def sliceScanX(self, px, py, csy, cey):
@@ -163,17 +294,22 @@ class CAPapp():
         print("onPress",event)
         self.scrSx = -1
         self.scrSy = -1
+        self.onScr = True
         pass
 
     def onRelease(self, event):
         print("onRelease",event)
         self.scrSx = -1
         self.scrSy = -1
+        self.onScr = False
         pass
 
     def onMotion(self,event):
-        if( ax==0):
+        if self.onScr == False:
             return
+        print("onMotion ",event)
+        #if( ax==0):
+        #    return
         if( self.scrSx < 0):
             self.scrSx = event.x
             self.scrSy = event.y
@@ -183,7 +319,7 @@ class CAPapp():
 
         self.clipSx, self.clipSy, self.clipEx, self.clipEy = self.correctClip(self.clipSx + movx, self.clipSy + movy, self.clipEx + movx,self.clipEy + movy)
 
-        self.cimg = self.img[self.clipSy:self.clipEy, self.clipSx:self.clipEx]
+        self.cimg = self.fimg[self.clipSy:self.clipEy, self.clipSx:self.clipEx]
 
         self.setImg(self.cimg)
 
@@ -202,6 +338,17 @@ class CAPapp():
             miny = 0
             maxy = self.img.shape[0]
 
+        if Vwidth > Vheight:
+            tw = (Vwidth / Vheight) * h
+            if tw > (maxx-minx):
+                ta = int((tw - (maxx-minx))/2)
+                minx = minx - ta
+                if minx < 0:
+                    minx = 0
+                maxx = maxx + ta
+                if maxx > self.img.shape[1]:
+                    maxx = self.img.shape[1]
+        
         if( miny < 0):
             miny = 0
             maxy = miny + h
@@ -236,14 +383,14 @@ class CAPapp():
             miny = py
             headx = int(((maxx-minx)/4)+minx)
             for y in range(py,0,-spfrm):
-                limg = self.img[y:y+spfrm,minx:headx]
+                limg = self.fimg[y:y+spfrm,minx:headx]
                 limstd = np.std(limg)
                 miny = y
                 if limstd < thr:
                     break
 
             for y in range(py,self.img.shape[0],spfrm):
-                limg = self.img[y:y+spfrm,minx:headx]
+                limg = self.fimg[y:y+spfrm,minx:headx]
                 limstd = np.std(limg)
                 maxy = y
                 if limstd < thr:
@@ -272,14 +419,14 @@ class CAPapp():
             minx = px
             heady = int(((maxy-miny)/4)+miny)
             for x in range(px,0,-spfrm):
-                limg = self.img[miny:heady,x:x+spfrm]
+                limg = self.fimg[miny:heady,x:x+spfrm]
                 limstd = np.std(limg)
                 minx = x
                 if limstd < thr:
                     break
 
             for x in range(px,self.img.shape[1],spfrm):
-                limg = self.img[miny:heady,x:x+spfrm]
+                limg = self.fimg[miny:heady,x:x+spfrm]
                 limstd = np.std(limg)
                 maxx = x
                 if limstd < thr:
@@ -296,7 +443,7 @@ class CAPapp():
             minx = int(maxx - Vw)
             
         self.clipSx, self.clipSy, self.clipEx, self.clipEy = self.shrink(minx, miny, maxx, maxy)
-        self.cimg = self.img[self.clipSy:self.clipEy,self.clipSx:self.clipEx]
+        self.cimg = self.fimg[self.clipSy:self.clipEy,self.clipSx:self.clipEx]
         self.setImg(self.cimg)
                        
     def shrink(self, minx, miny, maxx, maxy):
@@ -310,7 +457,7 @@ class CAPapp():
         return self.correctClip(minx+dw,miny+dh,maxx-dw,maxy-dh)
 
     def getFitsize(self, w, h, sw, sh ):
-        if w < h:
+        if sw > sh:
             vh = sh
             vw = w * (vh/h)
         else:
@@ -326,8 +473,9 @@ class CAPapp():
         try:
             vw, vh = self.getFitsize(img.shape[1], img.shape[0], Vwidth, Vheight)
 
-            rimg = cv2.resize(img , (vw, vh))
-            rgbimg = cv2.cvtColor(rimg, cv2.COLOR_BGR2RGB)
+            rgbimg = cv2.resize(img , (vw, vh))
+
+            #rgbimg = cv2.cvtColor(rimg, cv2.COLOR_BGR2RGB)
             pil_image = Image.fromarray(rgbimg)
             self.tkimg = ImageTk.PhotoImage(pil_image)
             self.c1id=self.canvas.create_image(Vwidth/2, Vheight/2, image=self.tkimg)
@@ -346,59 +494,18 @@ class CAPapp():
         except:
             self.canvas.create_text(75, 75, text = self.filename)
 
-    def filter2(self):
+    def filter0(self):
         filimg = cv2.cvtColor(self.cimg, cv2.COLOR_RGB2GRAY)
-        filimg = cv2.convertScaleAbs(filimg,alpha = 3,beta = -50 )
+        filimg = cv2.convertScaleAbs(filimg,alpha = 3,beta = -200 )
         self.setImg(filimg)
 
     def filter(self):
-        """
-        histup = cv2.calcHist([self.cimg],[0],None,[256],[0,256]) 
-        maxv = -1
-        vinx = -1
-        inx = 0
-        for v in histup:
-            if v > maxv:
-                maxv = v
-                vinx = inx
-            inx = inx + 1
-        print( vinx, maxv )
-        plt.plot(histup)
-        """
-        filimg = cv2.cvtColor(self.cimg, cv2.COLOR_RGB2GRAY)
-        filimg = cv2.convertScaleAbs(filimg,alpha = 3,beta = -200 )
-        #print( 256/(256-vinx), vinx - 256  )
-        """
-        filimg = cv2.cvtColor(self.cimg, cv2.COLOR_RGB2GRAY)
-        histup = cv2.calcHist([filimg],[0],None,[256],[0,256]) 
-        plt.plot(histup)
-        plt.show()
-        
-        cv =[]
-        ci =[]
-        cimg = np.ravel( filimg)
-        for n in range(1,256):
-            print(n)
-            upper = [x for x in cimg if x > n]
-            lower = [x for x in cimg if x <= n]
-            if( len(upper)*len(lower)!=0 ):
-                us = np.std( upper )
-                ls = np.std(lower)
-                print(us,ls)
-                cv.append( us + ls )
-                ci.append( n )
-
-        plt.plot(ci,cv)
-        plt.show()
-        """
-        self.setImg(filimg)
-
-
-        #clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-        #filimg = cv2.equalizeHist(filimg)
-        #filimg = clahe.apply(filimg)
-        #rimg = cv2.cvtColor(bookimg, cv2.COLOR_BGR2GRAY)
-        #self.oimg = cv2.imdecode(inp,cv2.IMREAD_UNCHANGED)
+        self.fimg = cv2.cvtColor(self.img, cv2.COLOR_RGB2GRAY)
+        outimage00 = BookSharpener.sharpenMem( self.fimg, 5.0, 64, 0 )
+        outimage32 = BookSharpener.sharpenMem( self.fimg, 5.0, 64, 32 )
+        self.fimg = cv2.addWeighted(outimage00, 0.5, outimage32, 0.5, 0)
+        self.cimg = self.fimg[self.clipSy:self.clipEy,self.clipSx:self.clipEx]
+        self.setImg(self.cimg)
 
     def scanareaX(self, cx):
         scanwidth = 128
@@ -483,18 +590,68 @@ class CAPapp():
 
         return ori
 
+    def fpos2spos(self,x,y):
+        sx = int((x-self.clipSx) * Vwidth / (self.clipEx - self.clipSx))
+        sy = int((y-self.clipSy) * Vheight / (self.clipEy - self.clipSy))
+        return sx,sy
+
+    def fpos2sposSub(self,x,y):
+        sx = int((x-self.clipSx) * Vwidth / (self.clipEx - self.clipSx))
+        sy = int((y-self.clipSy) * Vheight / (self.clipEy - self.clipSy))
+        return sx,sy
+
+
     def pic2scr(self, px, py):
         return  px*ax+xbias, py*ay+ybias
 
     def scr2pic(self, sx, sy):
         return  int((sx-xbias)/ax), int((sy-ybias)/ay)
 
+    def load_annotation(self):
+        self.aprof = json.loads('{"annos":{".annofilerx.json":{"text":"annotation"}}}')
+        try:
+            with open(self.initialdir+'/.annofilerx.json','r',encoding='utf-8') as f:
+                self.aprof = json.load(f)
+                annos = self.aprof['annos']
+                for a in annos:
+                    print(a,annos[a])
+        except:
+            print('no annotation')
+
+            
+        pass
+
+    def add_annotation(self):
+        istr = self.anolabelvar.get()
+        anno = simpledialog.askstring(title="",prompt="annotation",initialvalue=istr)
+        if anno!= None:
+            self.annos.put(os.path.basename(self.filename),anno)
+            self.anolabelvar.set( anno )
+
+    def gopage(self):
+        pagestr = simpledialog.askstring(title="go",prompt="go\npage")
+        if pagestr!= None:
+            p = int(pagestr)
+            if p >= 0 and p < len(self.pfiles):
+                self.filename =  self.initialdir+"/"+self.pfiles[p]
+                self.filereload()
+
     def fileopen_clicked(self):
         filename = filedialog.askopenfilename(initialdir=self.initialdir)
         if filename:
-            self.barlabel.set(filename)
+            self.annos = AnnoFiler(filename)
             self.initialdir= os.path.dirname(filename)
             self.pfiles = os.listdir(self.initialdir)
+            self.pfiles.sort()
+            if(os.path.basename(filename)==CpageSaveFile
+                or os.path.basename(filename)==AnnoSaveFile ):
+                try:
+                    with open(self.initialdir+'/'+CpageSaveFile,'r') as f:
+                        prof = json.load(f)
+                        filename = self.initialdir+"/"+prof['lastfile']
+                except:
+                    pass
+
             self.filename =  filename
             self.filereload()
             print( self.filename, self.img.shape[1], self.img.shape[0] )
@@ -503,15 +660,25 @@ class CAPapp():
         self.canvas.delete("all")
         try:
             with open( self.filename, 'rb') as f:
+                basename=os.path.basename(self.filename)
+                p=self.pfiles.index(basename)
+                self.barlabel.set(str(p)+"/"+str(len(self.pfiles))+" "+self.filename)
+                atext = self.annos.get(basename)
+                self.anolabelvar.set( atext )
                 fdata =f.read()
                 inp = np.frombuffer(fdata, dtype = 'int8')
                 self.img = cv2.imdecode(inp, cv2.IMREAD_UNCHANGED)
+                self.img = cv2.cvtColor(self.img, cv2.COLOR_BGR2RGB)
+                self.fimg = cv2.imdecode(inp, cv2.IMREAD_UNCHANGED)
+                self.fimg = cv2.cvtColor(self.fimg, cv2.COLOR_BGR2RGB)
                 self.cimg = self.img
                 self.clipSx =0
                 self.clipSy =0
                 self.clipEx = self.img.shape[1]
                 self.clipEy = self.img.shape[0]
                 self.setImg(self.img)
+                with open(self.initialdir+'/'+CpageSaveFile,"w") as f:
+                    f.write('{"lastfile":"'+basename+'"}')
         except:
             self.canvas.create_text(75, 75, text = self.filename)
             pass
